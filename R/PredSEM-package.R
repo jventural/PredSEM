@@ -6,7 +6,7 @@
 #'
 #' \itemize{
 #'   \item [ps_preparar()]: limpieza, criterios, ítems inversos y respuestas planas (paso 2).
-#'   \item [ps_muestra()]: tamaño de muestra para el modelo con semPower (paso 1).
+#'   \item [ps_muestra()]: tamaño de muestra para el modelo, como semPower (paso 1).
 #'   \item [ps_items()]: porcentaje de cada alternativa por ítem.
 #'   \item [ps_medida()]: análisis factorial confirmatorio y fiabilidad de cada escala (paso 3).
 #'   \item [ps_descriptivos()]: descriptivos y correlaciones de los puntajes (paso 4).

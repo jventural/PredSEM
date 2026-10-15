@@ -62,7 +62,7 @@ ps_sensibilidad(m)                           # Paso 10 · ¿cambia la conclusió
 | Función | Paso | Qué hace |
 |---|---|---|
 | `ps_preparar()` | 2 | limpieza, rangos, inversos, criterios en orden, respuestas planas |
-| `ps_muestra()` | 1 | N necesario con `semPower` para el mismo modelo |
+| `ps_muestra()` | 1 | N necesario para el mismo modelo (procedimiento de semPower) |
 | `ps_items()` | — | porcentaje de cada alternativa por ítem |
 | `ps_medida()` | 3 | AFC (WLSMV con ítems; MLR con parcelas), cargas, omega y alfa |
 | `ps_descriptivos()` | 4 | descriptivos y correlaciones de los puntajes |

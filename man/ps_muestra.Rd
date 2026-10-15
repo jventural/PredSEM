@@ -35,13 +35,15 @@ Un resultado \code{ps_resultado} con el N necesario (y la potencia con
 \code{n}) y su lectura.
 }
 \description{
-Calcula, con \code{semPower}, cuántos participantes hacen falta para detectar
+Calcula cuántos participantes hacen falta para detectar
 una relación estructural de tamaño \code{beta} con la potencia deseada, para el
 MISMO tipo de modelo que se estimará (variables latentes con sus
 indicadores). Si se da \code{n}, informa además la potencia lograda con ese n.
+Sigue el procedimiento de \code{semPower::semPower.powerRegression()}
+(comparación restringida), calculado con lavaan.
 }
 \examples{
 \donttest{
-if (requireNamespace("semPower", quietly = TRUE)) ps_muestra(criterio = 7, predictores = c(12, 8))
+ps_muestra(criterio = 7, predictores = c(12, 8))
 }
 }

@@ -13,10 +13,12 @@ ps_ejemplo <- function() system.file("extdata", "satisfaccion_academica.xlsx", p
 
 #' Tamaño de muestra para el modelo (paso 1)
 #'
-#' Calcula, con `semPower`, cuántos participantes hacen falta para detectar
+#' Calcula cuántos participantes hacen falta para detectar
 #' una relación estructural de tamaño `beta` con la potencia deseada, para el
 #' MISMO tipo de modelo que se estimará (variables latentes con sus
 #' indicadores). Si se da `n`, informa además la potencia lograda con ese n.
+#' Sigue el procedimiento de `semPower::semPower.powerRegression()`
+#' (comparación restringida), calculado con lavaan.
 #'
 #' @param criterio Número de indicadores del criterio.
 #' @param predictores Número de indicadores de cada predictor, por ejemplo
@@ -30,26 +32,24 @@ ps_ejemplo <- function() system.file("extdata", "satisfaccion_academica.xlsx", p
 #'   `n`) y su lectura.
 #' @examples
 #' \donttest{
-#' if (requireNamespace("semPower", quietly = TRUE)) ps_muestra(criterio = 7, predictores = c(12, 8))
+#' ps_muestra(criterio = 7, predictores = c(12, 8))
 #' }
 #' @export
 ps_muestra <- function(criterio, predictores, beta = .20, carga = .70, potencia = .80, alfa = .05, n = NULL) {
-  if (!requireNamespace("semPower", quietly = TRUE))
-    stop("Instala semPower: install.packages(\"semPower\")", call. = FALSE)
-  k <- length(predictores)
-  # el PRIMER factor de nIndicator es el criterio
-  args <- list(slopes = rep(beta, k), corXX = diag(k), nIndicator = c(criterio, predictores),
-               loadM = carga, alpha = alfa, comparison = "restricted", nullWhich = 1)
-  ap <- suppressMessages(do.call(semPower::semPower.powerRegression, c(list(type = "a-priori", power = potencia), args)))
-  N <- ap$requiredN
+  # Mismo procedimiento que semPower (powerRegression, comparación restringida):
+  # matriz poblacional del modelo, ajuste del modelo con el beta del primer
+  # predictor fijado en 0 y potencia con la chi cuadrado no central (1 gl).
+  # Se calcula con lavaan para no depender de la versión de semPower.
+  pw <- .potencia_regresion(criterio, predictores, beta, carga, alfa)
+  N <- 10
+  while (pw(N) < potencia) N <- N + 1
   tabla <- data.frame("\u03b2 m\u00ednimo" = .sin0(beta), Carga = .sin0(carga), Potencia = .sin0(potencia),
                       "N necesario" = N, check.names = FALSE)
   notas <- list(.nota(1, "N necesario", sprintf(
     "Para detectar \u03b2 = %s con potencia %s (cargas de %s; %d indicadores en el criterio y %s en los predictores) hacen falta %d participantes.",
     .sin0(beta), .sin0(potencia), .sin0(carga), criterio, paste(predictores, collapse = " y "), N)))
   if (!is.null(n)) {
-    ph <- suppressMessages(do.call(semPower::semPower.powerRegression, c(list(type = "post-hoc", N = n), args)))
-    pw <- ph$power
+    pw <- pw(n)
     tabla[["n que tienes"]] <- n; tabla[["Potencia lograda"]] <- .sin0(pw)
     notas[[2]] <- .nota(1, "Potencia lograda", sprintf("Con %d participantes la potencia para \u03b2 = %s es %s%s.", n, .sin0(beta), .sin0(pw),
       if (pw < potencia) ": por debajo de lo planeado; el IC de cada \u03b2 ser\u00e1 m\u00e1s ancho" else ""))
@@ -147,8 +147,9 @@ ps_grupos <- function(m, grupo, minimo = 100) {
   se <- .sintaxis_estructural(m$partes, m$covariables)
   sint_e <- paste(sm, gsub("b_[^*]+\\*", "", se$sintaxis), sep = "\n")
   sint_e <- paste(grep(":=", strsplit(sint_e, "\n")[[1]], value = TRUE, invert = TRUE), collapse = "\n")
-  fits$"\u03b2 libres" <- ajustar(sint_e, pasos$Cargas)
-  fits$"\u03b2 iguales" <- ajustar(sint_e, c(pasos$Cargas, "regressions"))
+  # con [<- list() un modelo que no converge queda como NULL en su lugar (con $<- se borraría)
+  fits["\u03b2 libres"] <- list(ajustar(sint_e, pasos$Cargas))
+  fits["\u03b2 iguales"] <- list(ajustar(sint_e, c(pasos$Cargas, "regressions")))
   A <- lapply(fits, function(f) if (is.null(f)) rep(NA, 9) else .ajuste(f))
   tabla <- data.frame(Modelo = names(fits),
                       "\u03c7\u00b2 (gl)" = vapply(A, function(a) if (is.na(a[1])) "no convergi\u00f3" else sprintf("%s (%d)", .f2(a["chi2"]), as.integer(a["gl"])), ""),
@@ -242,4 +243,25 @@ ps_sensibilidad <- function(m) {
       "Todas las variantes mantienen el signo de cada \u03b2: la conclusi\u00f3n no depende de una sola decisi\u00f3n." else
       "Alguna variante cambia el signo de un \u03b2: esa conclusi\u00f3n depende de decisiones del an\u00e1lisis; inf\u00f3rmalo."))
   .resultado(tabla, "An\u00e1lisis de sensibilidad (ps_sensibilidad)", notas)
+}
+
+
+# Potencia para detectar un beta en un modelo de regresión con variables
+# latentes: devuelve una función de N. Predictores no correlacionados, criterio
+# con varianza 1 y todas las cargas iguales (como semPower.powerRegression).
+.potencia_regresion <- function(criterio, predictores, beta, carga, alfa) {
+  k <- length(predictores); ni <- c(criterio, predictores); nf <- k + 1
+  Phi <- diag(nf); Phi[1, -1] <- Phi[-1, 1] <- beta
+  fin <- cumsum(ni); ini <- fin - ni + 1
+  Lambda <- matrix(0, sum(ni), nf)
+  for (j in seq_len(nf)) Lambda[ini[j]:fin[j], j] <- carga
+  Sigma <- Lambda %*% Phi %*% t(Lambda); diag(Sigma) <- 1
+  x <- paste0("x", seq_len(sum(ni))); dimnames(Sigma) <- list(x, x)
+  f <- paste0("f", seq_len(nf))
+  med <- vapply(seq_len(nf), function(j) paste0(f[j], " =~ ", paste(x[ini[j]:fin[j]], collapse = " + ")), "")
+  reg <- paste0("f1 ~ 0*f2", if (k > 1) paste0(" + ", paste(f[3:nf], collapse = " + ")))
+  h0 <- lavaan::sem(c(med, reg), sample.cov = Sigma, sample.nobs = 1000, std.lv = TRUE, likelihood = "wishart")
+  F0 <- 2 * unname(lavaan::fitMeasures(h0, "fmin"))
+  critico <- stats::qchisq(1 - alfa, 1)
+  function(N) 1 - stats::pchisq(critico, 1, ncp = (N - 1) * F0)
 }
