@@ -74,6 +74,14 @@ ps_sensibilidad(m)                           # Paso 10 · ¿cambia la conclusió
 
 La base de ejemplo es **simulada** (ficticia): no corresponde a ninguna persona.
 
+## Limpieza de datos (LimpiaR)
+
+Al cargar esta librería también tienes las funciones de limpieza de
+[LimpiaR](https://github.com/jventural/LimpiaR), las mismas en los tres diseños del curso:
+`leer()`, `revisar()`, `renombrar()`, `numero()`, `recodificar()`, `unificar()`,
+`validar()`, `calidad()`, `invertir()`, `puntaje()`, `excluir()`, `flujo()` y `guardar()`.
+Cada una hace un paso en una línea y muestra en la consola qué hizo.
+
 ## Autor
 
 José Ventura-León
