@@ -1,7 +1,7 @@
 # Funciones internas comunes (no exportadas)
 
-.f2 <- function(x) formatC(x, format = "f", digits = 2)
-.f3 <- function(x) sub("^(-?)0[.]", "\\1.", formatC(x, format = "f", digits = 3))
+.f2 <- function(x) ifelse(is.na(x), "", formatC(as.numeric(x), format = "f", digits = 2))
+.f3 <- function(x) ifelse(is.na(x), "", sub("^(-?)0[.]", "\\1.", formatC(as.numeric(x), format = "f", digits = 3)))
 .fp <- function(p) ifelse(p < .001, "< .001", sub("^0", "", formatC(p, format = "f", digits = 3)))
 .fpe <- function(p) ifelse(p < .001, "< .001", paste("=", .fp(p)))
 .ic <- function(a, b) sprintf("[%s, %s]", .f2(a), .f2(b))

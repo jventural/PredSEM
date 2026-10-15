@@ -138,8 +138,13 @@ ps_grupos <- function(m, grupo, minimo = 100) {
   base_args <- list(data = d, group = grupo, ordered = if (length(ord)) ord else NULL, estimator = m$estimador,
                     std.lv = TRUE, missing = if (length(ord)) "pairwise" else "ml")
   if (length(ord)) base_args$parameterization <- "theta"
-  ajustar <- function(sint, eq) tryCatch(do.call(lavaan::cfa, c(list(model = sint, group.equal = eq), base_args)),
-                                         error = function(e) NULL)
+  fallos <- character()   # por qué no convergió cada modelo (se informa en la lectura)
+  # si un modelo no converge se intenta otra vez con valores iniciales simples
+  ajustar <- function(sint, eq) {
+    uno <- function(extra) do.call(lavaan::cfa, c(list(model = sint, group.equal = eq), base_args, extra))
+    tryCatch(uno(list()), error = function(e1) tryCatch(uno(list(start = "simple")), error = function(e2) {
+      fallos[[length(fallos) + 1]] <<- conditionMessage(e2); NULL }))
+  }
   sm <- .sintaxis_medida(pr$ind)
   pasos <- list(Configural = character(), Umbrales = if (length(ord)) "thresholds" else "intercepts",
                 Cargas = c(if (length(ord)) "thresholds" else "intercepts", "loadings"))
@@ -150,7 +155,8 @@ ps_grupos <- function(m, grupo, minimo = 100) {
   # con [<- list() un modelo que no converge queda como NULL en su lugar (con $<- se borraría)
   fits["\u03b2 libres"] <- list(ajustar(sint_e, pasos$Cargas))
   fits["\u03b2 iguales"] <- list(ajustar(sint_e, c(pasos$Cargas, "regressions")))
-  A <- lapply(fits, function(f) if (is.null(f)) rep(NA, 9) else .ajuste(f))
+  vacio <- stats::setNames(rep(NA_real_, 9), c("chi2", "gl", "p", "cfi", "tli", "rmsea", "rmsea_li", "rmsea_ls", "srmr"))
+  A <- lapply(fits, function(f) if (is.null(f)) vacio else .ajuste(f))
   tabla <- data.frame(Modelo = names(fits),
                       "\u03c7\u00b2 (gl)" = vapply(A, function(a) if (is.na(a[1])) "no convergi\u00f3" else sprintf("%s (%d)", .f2(a["chi2"]), as.integer(a["gl"])), ""),
                       CFI = vapply(A, function(a) .f3(a["cfi"]), ""), RMSEA = vapply(A, function(a) .f3(a["rmsea"]), ""),
@@ -177,6 +183,8 @@ ps_grupos <- function(m, grupo, minimo = 100) {
   if (!is.na(A[[5]][1])) notas[[2]] <- .nota(5, "\u0394\u03c7\u00b2 (gl), p", if (inv(5))
     "Igualar los \u03b2 entre grupos no empeora el ajuste (\u0394\u03c7\u00b2 con p \u2265 .05): las relaciones son las mismas en ambos grupos." else
     "Igualar los \u03b2 empeora el ajuste: al menos una relaci\u00f3n cambia seg\u00fan el grupo (moderaci\u00f3n); mira la tabla de \u03b2 por grupo.")
+  if (length(fallos)) notas[[length(notas) + 1]] <- .nota(which(vapply(fits, is.null, TRUE))[1], "Modelo", paste(
+    "Un modelo no convergi\u00f3 (", paste(unique(fallos), collapse = "; "), "). Se informa as\u00ed y no se interpreta ese paso.", sep = ""))
   betas <- NULL
   if (!is.null(fits[[4]])) {
     sg <- lavaan::standardizedSolution(fits[[4]])
