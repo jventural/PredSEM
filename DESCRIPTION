@@ -1,0 +1,31 @@
+Package: PredSEM
+Type: Package
+Title: Simple Structural Equation Modeling for Predictive Studies
+Version: 0.1.0
+Authors@R: person("Jose", "Ventura-Leon", email = "jventuraleon@gmail.com",
+    role = c("aut", "cre"), comment = c(ORCID = "0000-0003-2996-4244"))
+Description: A small set of functions, one per step of the analysis, for
+    predictive or explanatory studies with latent variables. It prepares the
+    raw survey data (eligibility criteria, participant flow, reverse items,
+    flat responses), describes item responses, fits the measurement model of
+    each scale with reliability, describes scores and correlations, estimates
+    the structural model with discriminant validity and automatic indirect
+    effects, compares rival models, tests measurement invariance and
+    multigroup paths, and runs sensitivity analyses. Latent variables are
+    defined with short text such as "ASS" or "BERQ1:BERQ4 | BERQ5:BERQ8", and
+    hypotheses with formulas such as "SAT ~ ADA + AUT". Every result prints a
+    table and a plain-language reading of its key values.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Language: es
+Depends: R (>= 4.1.0)
+Imports:
+    ggplot2,
+    lavaan,
+    readxl,
+    stats,
+    utils
+Suggests:
+    semPower
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
