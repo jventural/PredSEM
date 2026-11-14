@@ -27,12 +27,15 @@
 
 .imprimir_notas <- function(notas) {
   if (!length(notas)) return(invisible())
-  cat("\nC\u00f3mo se lee:\n")
+  cat("
+C\u00f3mo se lee:
+")
+  ancho <- min(getOption("width", 80), 90) - 6
   for (k in seq_along(notas)) {
-    txt <- strwrap(notas[[k]]$texto, width = 76, exdent = 5)
-    txt[1] <- sprintf("  %d. %s", k, txt[1])
-    if (length(txt) > 1) txt[-1] <- paste0(" ", txt[-1])
-    cat(txt, sep = "\n")
+    txt <- strwrap(notas[[k]]$texto, width = ancho)
+    txt <- paste0(c(sprintf("  %-4s", sprintf("(%d)", k)), rep("      ", length(txt) - 1)), txt)
+    cat(txt, sep = "
+")
   }
 }
 
@@ -81,7 +84,10 @@ print.ps_resultado <- function(x, ...) {
 #   "BERQ1:BERQ8"              un rango de ítems
 #   "EAP1, EAP3, EAP5"         ítems sueltos
 #   "BERQ1:BERQ4 | BERQ5:BERQ8"  parcelas (cada tramo es la media de sus ítems)
-# Devuelve una lista: items (todos), parcelas (lista de tramos o NULL)
+#   "DIS = BERQ1:BERQ4 | AFR = BERQ5:BERQ8"  parcelas con nombre (salen así en
+#                              el modelo y en el diagrama)
+# Devuelve una lista: items (todos), parcelas (lista de tramos o NULL) y
+# nombres (nombre de cada parcela o NULL)
 # ---------------------------------------------------------------------------
 .expandir <- function(txt, columnas) {
   piezas <- trimws(strsplit(txt, ",")[[1]])
@@ -100,12 +106,23 @@ print.ps_resultado <- function(x, ...) {
 }
 .definir <- function(def, columnas) {
   tramos <- trimws(strsplit(def, "|", fixed = TRUE)[[1]])
+  con_nombre <- grepl("=", tramos, fixed = TRUE)
+  nombres <- ifelse(con_nombre, trimws(sub("=.*$", "", tramos)), NA_character_)
+  tramos <- trimws(sub("^[^=]*=", "", tramos))
   par <- lapply(tramos, .expandir, columnas = columnas)
   items <- unlist(par)
   falta <- setdiff(items, columnas)
   if (!length(items)) stop("La definici\u00f3n \"", def, "\" no corresponde a ning\u00fan \u00edtem de la base.", call. = FALSE)
   if (length(falta)) stop("No est\u00e1n en la base: ", paste(falta, collapse = ", "), call. = FALSE)
-  list(items = items, parcelas = if (length(par) > 1) par else NULL)
+  if (length(par) > 1 && any(con_nombre)) {
+    if (!all(con_nombre))
+      stop("En \"", def, "\" nombra todas las parcelas o ninguna (por ejemplo, \"DIS = BERQ1:BERQ4 | AFR = BERQ5:BERQ8\").", call. = FALSE)
+    if (any(nombres != make.names(nombres)) || anyDuplicated(nombres))
+      stop("Los nombres de las parcelas deben ser distintos y sin espacios ni s\u00edmbolos: ",
+           paste(nombres, collapse = ", "), call. = FALSE)
+  }
+  list(items = items, parcelas = if (length(par) > 1) par else NULL,
+       nombres = if (length(par) > 1 && all(con_nombre)) nombres else NULL)
 }
 
 # Indicadores de cada latente (ítems o parcelas) y datos con las parcelas calculadas
@@ -117,7 +134,10 @@ print.ps_resultado <- function(x, ...) {
     if (is.null(df$parcelas)) {
       ind[[f]] <- df$items; ordinales <- c(ordinales, df$items)
     } else {
-      nom <- paste0(f, "_p", seq_along(df$parcelas))
+      nom <- if (is.null(df$nombres)) paste0(f, "_p", seq_along(df$parcelas)) else df$nombres
+      choca <- nom[nom %in% c(cols, names(defs))]
+      if (length(choca))
+        stop("La parcela ", choca[1], " se llama igual que una columna de la base o que una variable latente; usa otro nombre.", call. = FALSE)
       for (k in seq_along(nom)) d[[nom[k]]] <- rowMeans(d[, df$parcelas[[k]], drop = FALSE], na.rm = TRUE)
       ind[[f]] <- nom
     }
@@ -148,4 +168,4 @@ print.ps_resultado <- function(x, ...) {
   "ajuste INSUFICIENTE: antes de seguir, revisa cargas bajas o correlaciones residuales con sustento te\u00f3rico"
 
 utils::globalVariables(c("x", "y", "xend", "yend", "etiqueta", "tipo", "lab", "h", "valor", "item",
-                         "categoria", "pct", "B", "li", "ls", "xs", "ys", "xe", "ye", "sig"))
+                         "categoria", "pct", "B", "li", "ls", "xs", "ys", "xe", "ye", "sig", "xl", "yl", "var"))

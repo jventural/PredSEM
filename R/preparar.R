@@ -137,6 +137,9 @@ print.ps_base <- function(x, ...) {
     "Limpieza: %d respuesta(s) fuera de rango quedaron vac\u00edas; quedan %d celda(s) vac\u00eda(s) en los \u00edtems.", a$fuera_rango, a$vacios))
   if (a$planas > 0) notas[[length(notas) + 1]] <- .nota(1, "n", sprintf(
     "%d participante(s) marcaron la misma alternativa en toda una escala (columna respuesta_plana). Se MARCAN, no se eliminan: el an\u00e1lisis sin ellos va como sensibilidad.", a$planas))
+  # las exclusiones van con sangría, entre lo recibido y lo analizado
+  medio <- !f$Etapa %in% c("Respuestas recibidas", "Participantes analizados")
+  f$Etapa[medio] <- paste0("   ", f$Etapa[medio])
   .resultado(f, "Base preparada (ps_preparar)", notas)
 }
 

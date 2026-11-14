@@ -4,18 +4,33 @@
 \alias{plot.ps_modelo}
 \title{Diagrama del modelo estimado}
 \usage{
-\method{plot}{ps_modelo}(x, ...)
+\method{plot}{ps_modelo}(x, indicadores = TRUE, ...)
 }
 \arguments{
 \item{x}{El resultado de \code{\link[=ps_modelo]{ps_modelo()}}.}
 
+\item{indicadores}{\code{TRUE} (por defecto) dibuja también los ítems o
+parcelas con sus cargas; \code{FALSE} deja solo las latentes y sus relaciones.}
+
 \item{...}{No se usa.}
 }
 \value{
-Un gráfico \code{ggplot}.
+Un gráfico \code{ggplot} (se guarda con \code{ggplot2::ggsave()} o \code{png()}).
 }
 \description{
-Dibuja las variables latentes y las flechas de las hipótesis con su
-coeficiente beta estandarizado (línea continua si su IC no incluye el cero;
-punteada si lo incluye) y el R2 de cada criterio.
+Dibuja el modelo como se presenta en un artículo: las variables latentes
+(círculos), sus indicadores (rectángulos: ítems o parcelas) con la carga
+estandarizada, las correlaciones entre latentes (flecha curva de dos
+puntas) y las flechas de las hipótesis con su beta estandarizado (línea
+continua si su IC no incluye el cero; punteada si lo incluye, con "ns"),
+además del R2 de cada criterio. Los predictores van a la izquierda con sus
+indicadores, los criterios a la derecha y las mediadoras arriba.
+}
+\examples{
+base <- ps_preparar(ps_ejemplo(), escalas = c(BERQ = "1-5", EAP = "1-4", ASS = "1-3"))
+m <- ps_modelo(base, "SAT ~ ADA + AE",
+               ADA = "DIS = BERQ1, BERQ6, BERQ11 | REE = BERQ3, BERQ8, BERQ13",
+               AE = "EAP", SAT = "ASS")
+plot(m)
+plot(m, indicadores = FALSE)
 }

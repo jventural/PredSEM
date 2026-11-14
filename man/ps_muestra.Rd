@@ -11,7 +11,10 @@ ps_muestra(
   carga = 0.7,
   potencia = 0.8,
   alfa = 0.05,
-  n = NULL
+  n = NULL,
+  pendientes = NULL,
+  cor_predictores = NULL,
+  cual = NULL
 )
 }
 \arguments{
@@ -20,7 +23,8 @@ ps_muestra(
 \item{predictores}{Número de indicadores de cada predictor, por ejemplo
 \code{c(12, 8)}.}
 
-\item{beta}{Coeficiente estandarizado más pequeño que interesa detectar.}
+\item{beta}{Coeficiente estandarizado más pequeño que interesa detectar,
+igual para todos los predictores (si no se da \code{pendientes}).}
 
 \item{carga}{Carga factorial típica de los indicadores.}
 
@@ -29,6 +33,15 @@ ps_muestra(
 \item{alfa}{Nivel de significación.}
 
 \item{n}{Opcional: el tamaño de muestra que se tiene.}
+
+\item{pendientes}{Opcional: el coeficiente estandarizado esperado de cada
+predictor, en el orden de \code{predictores}, por ejemplo \code{c(.30, .20)}.}
+
+\item{cor_predictores}{Opcional: correlación entre los predictores (un
+número o una matriz). Si no se da, no están correlacionados.}
+
+\item{cual}{Qué pendiente se contrasta (su posición). Por omisión, la más
+pequeña; sin \code{pendientes}, la primera.}
 }
 \value{
 Un resultado \code{ps_resultado} con el N necesario (y la potencia con
@@ -39,11 +52,29 @@ Calcula cuántos participantes hacen falta para detectar
 una relación estructural de tamaño \code{beta} con la potencia deseada, para el
 MISMO tipo de modelo que se estimará (variables latentes con sus
 indicadores). Si se da \code{n}, informa además la potencia lograda con ese n.
-Sigue el procedimiento de \code{semPower::semPower.powerRegression()}
-(comparación restringida), calculado con lavaan.
+}
+\details{
+Reproduce \code{semPower::semPower.powerRegression()} (tipo a priori,
+comparación restringida, \code{nullEffect = "slope = 0"}): la matriz
+poblacional del modelo, el ajuste por máxima verosimilitud del modelo con
+la pendiente contrastada fijada en 0 y la misma búsqueda del N. Se calcula
+con lavaan para no depender de la versión de semPower. Equivalencias:
+\code{pendientes} = \code{slopes}, \code{cor_predictores} = \code{corXX}, \code{cual} =
+\code{nullWhich}, \code{carga} = \code{loadM}, \code{alfa} = \code{alpha}, \code{potencia} = \code{power} y
+\code{c(criterio, predictores)} = \code{nIndicator}. En semPower el PRIMER valor de
+\code{nIndicator} es el criterio; aquí se pide por separado para no confundirlo.
 }
 \examples{
 \donttest{
 ps_muestra(criterio = 7, predictores = c(12, 8))
+# Igual que semPower.powerRegression(slopes = c(.30, .20), corXX = .40,
+#   nullWhich = 2, nIndicator = c(6, 6, 6), loadM = .70): N = 301
+ps_muestra(criterio = 6, predictores = c(6, 6), pendientes = c(.30, .20),
+           cor_predictores = .40)
 }
+}
+\references{
+Moshagen, M., & Bader, M. (2024). semPower: General power
+analysis for structural equation models. \emph{Behavior Research Methods,
+56}(4), 2901-2922. \doi{10.3758/s13428-023-02254-7}
 }

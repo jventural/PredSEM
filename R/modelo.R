@@ -51,7 +51,9 @@
 #'   (aquí AE es mediadora y el efecto indirecto se calcula solo).
 #' @param ... Las variables latentes con su definición, igual que en
 #'   [ps_medida()]: `SAT = "ASS"`, `ADA = "BERQ1:BERQ4 | BERQ5:BERQ8"`
-#'   (parcelas).
+#'   (parcelas). Las parcelas pueden llevar nombre, que es el que aparece en
+#'   el modelo y en `plot()`: `ADA = "DIS = BERQ1:BERQ4 | AFR = BERQ5:BERQ8"`.
+#'   Así una variable con dimensiones se forma con sus dimensiones (parceling).
 #' @param covariables Variables observadas de la base que entran como
 #'   controles en todas las ecuaciones (por ejemplo `"edad"`). Opcional.
 #'
@@ -170,46 +172,155 @@ ps_modelo <- function(base, modelo, ..., covariables = NULL) {
 #' @export
 print.ps_modelo <- function(x, ...) {
   cat("\nModelo de ecuaciones estructurales (ps_modelo)\n==============================================\n")
-  cat(sprintf("Modelo: %s | estimador %s | n = %d\n", gsub("\n", "; ", x$modelo), x$estimador, lavaan::lavInspect(x$fit, "nobs")))
+  cat(.resumen_modelo(x), "\n", sep = "")
   for (k in c("ajuste", "discriminante", "estructural", "indirectos")) if (!is.null(x[[k]])) print(x[[k]])
   invisible(x)
 }
 
+# Una línea con el modelo, el estimador y la n (consola y Quarto)
+.resumen_modelo <- function(x)
+  sprintf("Modelo: %s | estimador %s | n = %d", gsub("\n", "; ", x$modelo), x$estimador, lavaan::lavInspect(x$fit, "nobs"))
+
 #' Diagrama del modelo estimado
 #'
-#' Dibuja las variables latentes y las flechas de las hipótesis con su
-#' coeficiente beta estandarizado (línea continua si su IC no incluye el cero;
-#' punteada si lo incluye) y el R2 de cada criterio.
+#' Dibuja el modelo como se presenta en un artículo: las variables latentes
+#' (círculos), sus indicadores (rectángulos: ítems o parcelas) con la carga
+#' estandarizada, las correlaciones entre latentes (flecha curva de dos
+#' puntas) y las flechas de las hipótesis con su beta estandarizado (línea
+#' continua si su IC no incluye el cero; punteada si lo incluye, con "ns"),
+#' además del R2 de cada criterio. Los predictores van a la izquierda con sus
+#' indicadores, los criterios a la derecha y las mediadoras arriba.
 #'
 #' @param x El resultado de [ps_modelo()].
+#' @param indicadores `TRUE` (por defecto) dibuja también los ítems o
+#'   parcelas con sus cargas; `FALSE` deja solo las latentes y sus relaciones.
 #' @param ... No se usa.
-#' @return Un gráfico `ggplot`.
+#' @return Un gráfico `ggplot` (se guarda con `ggplot2::ggsave()` o `png()`).
+#' @examples
+#' base <- ps_preparar(ps_ejemplo(), escalas = c(BERQ = "1-5", EAP = "1-4", ASS = "1-3"))
+#' m <- ps_modelo(base, "SAT ~ ADA + AE",
+#'                ADA = "DIS = BERQ1, BERQ6, BERQ11 | REE = BERQ3, BERQ8, BERQ13",
+#'                AE = "EAP", SAT = "ASS")
+#' plot(m)
+#' plot(m, indicadores = FALSE)
 #' @export
-plot.ps_modelo <- function(x, ...) {
+plot.ps_modelo <- function(x, indicadores = TRUE, ...) {
   ss <- lavaan::standardizedSolution(x$fit)
-  reg <- ss[ss$op == "~" & ss$rhs %in% x$lat, ]
+  lat <- x$lat
+  reg <- ss[ss$op == "~" & ss$lhs %in% lat & ss$rhs %in% lat, ]
+  cvs <- ss[ss$op == "~~" & ss$lhs != ss$rhs & ss$lhs %in% lat & ss$rhs %in% lat, ]
+  car <- ss[ss$op == "=~" & ss$lhs %in% lat, ]
   r2 <- lavaan::lavInspect(x$fit, "r2")
-  # Capas: exógenas a la izquierda, mediadoras al centro, criterios finales a la derecha
-  endo <- unique(reg$lhs); exo <- setdiff(x$lat, endo)
+  endo <- unique(reg$lhs); exo <- setdiff(lat, endo)
   med <- intersect(endo, reg$rhs); fin <- setdiff(endo, med)
-  capas <- list(exo, med, fin); capas <- capas[lengths(capas) > 0]
-  pos <- do.call(rbind, lapply(seq_along(capas), function(k) {
-    v <- capas[[k]]; data.frame(var = v, x = (k - 1) * 3, y = if (length(v) == 1) 0 else seq(1.6, -1.6, length.out = length(v)))
-  }))
-  if (length(med) == 1 && length(capas) == 3) pos$y[pos$var == med] <- 1.6
-  e <- merge(merge(reg, pos, by.x = "rhs", by.y = "var"), pos, by.x = "lhs", by.y = "var", suffixes = c("0", "1"))
-  dx <- e$x1 - e$x0; dy <- e$y1 - e$y0; l <- sqrt(dx^2 + dy^2); k <- .75
-  e$xs <- e$x0 + k * dx / l; e$ys <- e$y0 + k * .55 * dy / l; e$xe <- e$x1 - k * dx / l; e$ye <- e$y1 - k * .55 * dy / l
-  e$sig <- !.incluye0(e$ci.lower, e$ci.upper)
-  e$lab <- sprintf("%s%s", .f2(e$est.std), ifelse(e$sig, "", " (ns)"))
+  rad <- .62; anc <- 1.05; alt <- .40; paso <- .50; sep <- 2.3
+  n_ind <- vapply(lat, function(v) sum(car$lhs == v), 1)
+
+  # --- Posición de las latentes: exógenas | mediadoras (arriba) | criterios ---
+  bloque <- function(v) if (indicadores && !(v %in% med)) max(n_ind[v] * paso, 2 * rad + .5) + .5 else 2 * rad + 1.1
+  apilar <- function(vs, x0) {
+    if (!length(vs)) return(NULL)
+    h <- vapply(vs, bloque, 1); tope <- sum(h) / 2
+    data.frame(var = vs, x = x0, y = tope - cumsum(h) + h / 2)
+  }
+  dx <- if (indicadores) 4.6 else 3.4
+  pos <- rbind(apilar(exo, 0), apilar(fin, if (length(med)) 2 * dx else dx))
+  if (length(med)) {
+    pm <- apilar(med, dx)
+    pm$y <- pm$y - min(pm$y) + max(pos$y) + rad + 1.1
+    pos <- rbind(pos, pm)
+  }
+  xy <- function(v) unlist(pos[match(v, pos$var), c("x", "y")])
+
+  # --- Indicadores: izquierda (exógenas), derecha (criterios), arriba (mediadoras) ---
+  cajas <- NULL; cargas <- NULL
+  if (indicadores) {
+    for (v in lat) {
+      cv <- car[car$lhs == v, ]; k <- nrow(cv); c0 <- xy(v)
+      off <- seq_len(k) - (k + 1) / 2
+      if (v %in% med) {
+        xi <- c0[1] + off * (anc + .12); yi <- rep(c0[2] + rad + 1.25, k)
+      } else {
+        xi <- rep(c0[1] + if (v %in% exo) -sep else sep, k); yi <- c0[2] - off * paso
+      }
+      cajas <- rbind(cajas, data.frame(lab = cv$rhs, x = xi, y = yi))
+      # la flecha llega al centro del lado del recuadro que mira a la latente
+      if (v %in% med) { xe <- xi; ye <- yi - alt / 2 } else { xe <- xi - sign(xi - c0[1]) * anc / 2; ye <- yi }
+      u <- cbind(xe - c0[1], ye - c0[2]); u <- u / sqrt(rowSums(u^2))
+      cargas <- rbind(cargas, data.frame(xs = c0[1] + rad * u[, 1], ys = c0[2] + rad * u[, 2],
+                                         xe = xe, ye = ye, lab = .f2(cv$est.std)))
+    }
+    cargas$xl <- cargas$xs + .62 * (cargas$xe - cargas$xs)
+    cargas$yl <- cargas$ys + .62 * (cargas$ye - cargas$ys)
+  }
+
+  # --- Hipótesis (betas) ---
+  fl <- NULL
+  if (nrow(reg)) {
+    p0 <- t(vapply(reg$rhs, xy, c(0, 0))); p1 <- t(vapply(reg$lhs, xy, c(0, 0)))
+    u <- p1 - p0; u <- u / sqrt(rowSums(u^2))
+    fl <- data.frame(xs = p0[, 1] + rad * u[, 1], ys = p0[, 2] + rad * u[, 2],
+                     xe = p1[, 1] - rad * u[, 1], ye = p1[, 2] - rad * u[, 2],
+                     sig = !.incluye0(reg$ci.lower, reg$ci.upper))
+    fl$lab <- sprintf("%s%s", .f2(reg$est.std), ifelse(fl$sig, "", " (ns)"))
+    fl$xl <- fl$xs + .45 * (fl$xe - fl$xs); fl$yl <- fl$ys + .45 * (fl$ye - fl$ys)
+  }
+
+  # --- Correlaciones entre latentes (curvas de dos puntas, abiertas hacia afuera del modelo) ---
+  cu <- NULL
+  if (nrow(cvs)) {
+    cu <- do.call(rbind, lapply(seq_len(nrow(cvs)), function(i) {
+      a <- xy(cvs$lhs[i]); b <- xy(cvs$rhs[i])
+      if (a[2] < b[2]) { tmp <- a; a <- b; b <- tmp }
+      lado <- if (cvs$lhs[i] %in% exo) -1 else 1        # -1: hacia la izquierda (predictores); +1: derecha (criterios)
+      ang <- atan2(b[2] - a[2], b[1] - a[1])
+      gira <- lado * .35
+      xs <- a[1] + rad * cos(ang + gira); ys <- a[2] + rad * sin(ang + gira)
+      xe <- b[1] + rad * cos(ang + pi - gira); ye <- b[2] + rad * sin(ang + pi - gira)
+      L <- sqrt((xe - xs)^2 + (ye - ys)^2)
+      nx <- (ye - ys) / L; ny <- -(xe - xs) / L
+      if (nx * lado < 0) { nx <- -nx; ny <- -ny }
+      data.frame(xs = xs, ys = ys, xe = xe, ye = ye, nx = nx, ny = ny, L = L, lab = .f2(cvs$est.std[i]))
+    }))
+    curv <- .45
+    cu$xl <- (cu$xs + cu$xe) / 2 + cu$nx * curv * cu$L / 2
+    cu$yl <- (cu$ys + cu$ye) / 2 + cu$ny * curv * cu$L / 2
+    # signo de geom_curve: positivo = curva hacia la derecha del sentido de avance
+    cu$curv <- ifelse((cu$xe - cu$xs) * cu$ny - (cu$ye - cu$ys) * cu$nx > 0, -curv, curv)
+  }
+
+  # --- Dibujo ---
+  ang <- seq(0, 2 * pi, length.out = 100)
+  circ <- do.call(rbind, lapply(seq_len(nrow(pos)), function(i)
+    data.frame(var = pos$var[i], x = pos$x[i] + rad * cos(ang), y = pos$y[i] + rad * sin(ang))))
   pos$lab <- ifelse(pos$var %in% endo, sprintf("%s\nR\u00b2 = %s", pos$var, .f2(r2[pos$var])), pos$var)
-  ggplot2::ggplot() +
-    ggplot2::geom_segment(data = e, ggplot2::aes(x = xs, y = ys, xend = xe, yend = ye, linetype = sig),
-                          arrow = ggplot2::arrow(length = ggplot2::unit(.25, "cm"), type = "closed"), linewidth = .8, colour = "#404040") +
-    ggplot2::geom_label(data = e, ggplot2::aes(x = xs + .38 * (xe - xs), y = ys + .38 * (ye - ys), label = lab), size = 4.4,
-                        linewidth = 0, fill = "white", label.padding = ggplot2::unit(.15, "lines")) +
-    ggplot2::geom_point(data = pos, ggplot2::aes(x, y), shape = 21, size = 30, fill = "#FBE3E3", colour = "#BB1715", stroke = 1) +
-    ggplot2::geom_text(data = pos, ggplot2::aes(x, y, label = lab), size = 4.2, lineheight = .9) +
+  g <- ggplot2::ggplot()
+  if (!is.null(cargas))
+    g <- g + ggplot2::geom_segment(data = cargas, ggplot2::aes(x = xs, y = ys, xend = xe, yend = ye),
+                                   arrow = ggplot2::arrow(length = ggplot2::unit(.16, "cm"), type = "closed"),
+                                   linewidth = .45, colour = "#606060") +
+      ggplot2::geom_rect(data = cajas, ggplot2::aes(xmin = x - anc / 2, xmax = x + anc / 2, ymin = y - alt / 2, ymax = y + alt / 2),
+                         fill = "white", colour = "#404040", linewidth = .4) +
+      ggplot2::geom_text(data = cajas, ggplot2::aes(x, y, label = lab), size = 3) +
+      ggplot2::geom_label(data = cargas, ggplot2::aes(xl, yl, label = lab), size = 2.6, linewidth = 0,
+                          fill = "white", label.padding = ggplot2::unit(.08, "lines"))
+  if (!is.null(cu)) {
+    for (i in seq_len(nrow(cu)))
+      g <- g + ggplot2::geom_curve(data = cu[i, ], ggplot2::aes(x = xs, y = ys, xend = xe, yend = ye),
+                                   curvature = cu$curv[i], linewidth = .6, colour = "#404040",
+                                   arrow = ggplot2::arrow(length = ggplot2::unit(.18, "cm"), type = "closed", ends = "both"))
+    g <- g + ggplot2::geom_label(data = cu, ggplot2::aes(xl, yl, label = lab), size = 3.6, linewidth = 0,
+                                 fill = "white", label.padding = ggplot2::unit(.12, "lines"))
+  }
+  if (!is.null(fl))
+    g <- g + ggplot2::geom_segment(data = fl, ggplot2::aes(x = xs, y = ys, xend = xe, yend = ye, linetype = sig),
+                                   arrow = ggplot2::arrow(length = ggplot2::unit(.25, "cm"), type = "closed"),
+                                   linewidth = .8, colour = "#404040") +
+      ggplot2::geom_label(data = fl, ggplot2::aes(xl, yl, label = lab), size = 3.8, linewidth = 0,
+                          fill = "white", label.padding = ggplot2::unit(.15, "lines"))
+  g + ggplot2::geom_polygon(data = circ, ggplot2::aes(x, y, group = var), fill = "#FBE3E3", colour = "#BB1715", linewidth = .6) +
+    ggplot2::geom_text(data = pos, ggplot2::aes(x, y, label = lab), size = 3.9, lineheight = .9) +
     ggplot2::scale_linetype_manual(values = c(`TRUE` = "solid", `FALSE` = "dashed"), guide = "none") +
-    ggplot2::coord_cartesian(xlim = c(-1, max(pos$x) + 1), ylim = c(-2.4, 2.4)) + ggplot2::theme_void()
+    ggplot2::coord_equal(clip = "off") + ggplot2::theme_void() +
+    ggplot2::theme(plot.margin = ggplot2::margin(10, 10, 10, 10))
 }

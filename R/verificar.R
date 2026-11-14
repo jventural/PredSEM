@@ -17,43 +17,79 @@ ps_ejemplo <- function() system.file("extdata", "satisfaccion_academica.xlsx", p
 #' una relación estructural de tamaño `beta` con la potencia deseada, para el
 #' MISMO tipo de modelo que se estimará (variables latentes con sus
 #' indicadores). Si se da `n`, informa además la potencia lograda con ese n.
-#' Sigue el procedimiento de `semPower::semPower.powerRegression()`
-#' (comparación restringida), calculado con lavaan.
+#'
+#' Reproduce `semPower::semPower.powerRegression()` (tipo a priori,
+#' comparación restringida, `nullEffect = "slope = 0"`): la matriz
+#' poblacional del modelo, el ajuste por máxima verosimilitud del modelo con
+#' la pendiente contrastada fijada en 0 y la misma búsqueda del N. Se calcula
+#' con lavaan para no depender de la versión de semPower. Equivalencias:
+#' `pendientes` = `slopes`, `cor_predictores` = `corXX`, `cual` =
+#' `nullWhich`, `carga` = `loadM`, `alfa` = `alpha`, `potencia` = `power` y
+#' `c(criterio, predictores)` = `nIndicator`. En semPower el PRIMER valor de
+#' `nIndicator` es el criterio; aquí se pide por separado para no confundirlo.
 #'
 #' @param criterio Número de indicadores del criterio.
 #' @param predictores Número de indicadores de cada predictor, por ejemplo
 #'   `c(12, 8)`.
-#' @param beta Coeficiente estandarizado más pequeño que interesa detectar.
+#' @param beta Coeficiente estandarizado más pequeño que interesa detectar,
+#'   igual para todos los predictores (si no se da `pendientes`).
 #' @param carga Carga factorial típica de los indicadores.
 #' @param potencia Potencia deseada.
 #' @param alfa Nivel de significación.
 #' @param n Opcional: el tamaño de muestra que se tiene.
+#' @param pendientes Opcional: el coeficiente estandarizado esperado de cada
+#'   predictor, en el orden de `predictores`, por ejemplo `c(.30, .20)`.
+#' @param cor_predictores Opcional: correlación entre los predictores (un
+#'   número o una matriz). Si no se da, no están correlacionados.
+#' @param cual Qué pendiente se contrasta (su posición). Por omisión, la más
+#'   pequeña; sin `pendientes`, la primera.
 #' @return Un resultado `ps_resultado` con el N necesario (y la potencia con
 #'   `n`) y su lectura.
+#' @references Moshagen, M., & Bader, M. (2024). semPower: General power
+#'   analysis for structural equation models. *Behavior Research Methods,
+#'   56*(4), 2901-2922. \doi{10.3758/s13428-023-02254-7}
 #' @examples
 #' \donttest{
 #' ps_muestra(criterio = 7, predictores = c(12, 8))
+#' # Igual que semPower.powerRegression(slopes = c(.30, .20), corXX = .40,
+#' #   nullWhich = 2, nIndicator = c(6, 6, 6), loadM = .70): N = 301
+#' ps_muestra(criterio = 6, predictores = c(6, 6), pendientes = c(.30, .20),
+#'            cor_predictores = .40)
 #' }
 #' @export
-ps_muestra <- function(criterio, predictores, beta = .20, carga = .70, potencia = .80, alfa = .05, n = NULL) {
-  # Mismo procedimiento que semPower (powerRegression, comparación restringida):
-  # matriz poblacional del modelo, ajuste del modelo con el beta del primer
-  # predictor fijado en 0 y potencia con la chi cuadrado no central (1 gl).
-  # Se calcula con lavaan para no depender de la versión de semPower.
-  pw <- .potencia_regresion(criterio, predictores, beta, carga, alfa)
-  N <- 10
-  while (pw(N) < potencia) N <- N + 1
+ps_muestra <- function(criterio, predictores, beta = .20, carga = .70, potencia = .80, alfa = .05, n = NULL,
+                       pendientes = NULL, cor_predictores = NULL, cual = NULL) {
+  k <- length(predictores)
+  if (is.null(pendientes)) {
+    pendientes <- rep(beta, k)
+    if (is.null(cual)) cual <- 1
+  } else if (length(pendientes) != k) {
+    stop("Da una pendiente por cada predictor (", k, ").", call. = FALSE)
+  }
+  if (is.null(cual)) cual <- which.min(abs(pendientes))
+  beta <- pendientes[cual]
+  Fmin <- .fmin_regresion(criterio, predictores, pendientes, cor_predictores, cual, carga)
+  critico <- stats::qchisq(alfa, 1, lower.tail = FALSE)
+  pw <- function(N) stats::pchisq(critico, 1, ncp = Fmin * (N - 1), lower.tail = FALSE)
+  N <- .n_apriori(Fmin, critico, potencia)
   tabla <- data.frame("\u03b2 m\u00ednimo" = .sin0(beta), Carga = .sin0(carga), Potencia = .sin0(potencia),
                       "N necesario" = N, check.names = FALSE)
+  otras <- if (k > 1) sprintf(" (pendientes %s; se contrasta la %d.\u00aa)", paste(.sin0(pendientes), collapse = ", "), cual) else ""
+  rxx <- if (!is.null(cor_predictores) && !is.matrix(cor_predictores)) sprintf("; r entre predictores = %s", .sin0(cor_predictores)) else ""
   notas <- list(.nota(1, "N necesario", sprintf(
-    "Para detectar \u03b2 = %s con potencia %s (cargas de %s; %d indicadores en el criterio y %s en los predictores) hacen falta %d participantes.",
-    .sin0(beta), .sin0(potencia), .sin0(carga), criterio, paste(predictores, collapse = " y "), N)))
+    "Para detectar \u03b2 = %s%s con potencia %s (cargas de %s; %d indicadores en el criterio y %s en los predictores%s) hacen falta %d participantes.",
+    .sin0(beta), otras, .sin0(potencia), .sin0(carga), criterio, paste(predictores, collapse = " y "), rxx, N)))
   if (!is.null(n)) {
     pw <- pw(n)
     tabla[["n que tienes"]] <- n; tabla[["Potencia lograda"]] <- .sin0(pw)
     notas[[2]] <- .nota(1, "Potencia lograda", sprintf("Con %d participantes la potencia para \u03b2 = %s es %s%s.", n, .sin0(beta), .sin0(pw),
       if (pw < potencia) ": por debajo de lo planeado; el IC de cada \u03b2 ser\u00e1 m\u00e1s ancho" else ""))
   }
+  notas[[length(notas) + 1]] <- .nota(1, "\u03b2 m\u00ednimo", sprintf(
+    "En semPower: semPower.powerRegression(type = \"a-priori\", slopes = c(%s), corXX = %s, nullEffect = \"slope = 0\", nullWhich = %d, nIndicator = c(%s), loadM = %s, alpha = %s, power = %s). El primer valor de nIndicator es el criterio.",
+    paste(.sin0(pendientes), collapse = ", "),
+    if (is.null(cor_predictores)) "NULL" else if (is.matrix(cor_predictores)) "<matriz>" else .sin0(cor_predictores),
+    cual, paste(c(criterio, predictores), collapse = ", "), .sin0(carga), .sin0(alfa), .sin0(potencia)))
   .resultado(tabla, "Tama\u00f1o de muestra para el modelo (ps_muestra)", notas)
 }
 
@@ -138,7 +174,7 @@ ps_grupos <- function(m, grupo, minimo = 100) {
   base_args <- list(data = d, group = grupo, ordered = if (length(ord)) ord else NULL, estimator = m$estimador,
                     std.lv = TRUE, missing = if (length(ord)) "pairwise" else "ml")
   if (length(ord)) base_args$parameterization <- "theta"
-  fallos <- character()   # por qué no convergió cada modelo (se informa en la lectura)
+  fallos <- character()   # por qu\u00e9 no convergi\u00f3 cada modelo (se informa en la lectura)
   # si un modelo no converge se intenta otra vez con valores iniciales simples
   ajustar <- function(sint, eq) {
     uno <- function(extra) do.call(lavaan::cfa, c(list(model = sint, group.equal = eq), base_args, extra))
@@ -253,13 +289,17 @@ ps_sensibilidad <- function(m) {
   .resultado(tabla, "An\u00e1lisis de sensibilidad (ps_sensibilidad)", notas)
 }
 
-
-# Potencia para detectar un beta en un modelo de regresión con variables
-# latentes: devuelve una función de N. Predictores no correlacionados, criterio
-# con varianza 1 y todas las cargas iguales (como semPower.powerRegression).
-.potencia_regresion <- function(criterio, predictores, beta, carga, alfa) {
+# Discrepancia de máxima verosimilitud (F0) del modelo con la pendiente `cual`
+# fijada en 0, ajustado a la matriz poblacional de la regresión latente
+# (como semPower.powerRegression: el primer factor es el criterio, todo
+# estandarizado, indicadores con la misma carga)
+.fmin_regresion <- function(criterio, predictores, pendientes, cor_predictores, cual, carga) {
   k <- length(predictores); ni <- c(criterio, predictores); nf <- k + 1
-  Phi <- diag(nf); Phi[1, -1] <- Phi[-1, 1] <- beta
+  Rxx <- diag(k)
+  if (is.matrix(cor_predictores)) Rxx <- cor_predictores
+  else if (!is.null(cor_predictores)) Rxx[row(Rxx) != col(Rxx)] <- cor_predictores
+  Phi <- diag(nf); Phi[-1, -1] <- Rxx
+  Phi[1, -1] <- Phi[-1, 1] <- Rxx %*% pendientes
   fin <- cumsum(ni); ini <- fin - ni + 1
   Lambda <- matrix(0, sum(ni), nf)
   for (j in seq_len(nf)) Lambda[ini[j]:fin[j], j] <- carga
@@ -267,9 +307,18 @@ ps_sensibilidad <- function(m) {
   x <- paste0("x", seq_len(sum(ni))); dimnames(Sigma) <- list(x, x)
   f <- paste0("f", seq_len(nf))
   med <- vapply(seq_len(nf), function(j) paste0(f[j], " =~ ", paste(x[ini[j]:fin[j]], collapse = " + ")), "")
-  reg <- paste0("f1 ~ 0*f2", if (k > 1) paste0(" + ", paste(f[3:nf], collapse = " + ")))
-  h0 <- lavaan::sem(c(med, reg), sample.cov = Sigma, sample.nobs = 1000, std.lv = TRUE, likelihood = "wishart")
-  F0 <- 2 * unname(lavaan::fitMeasures(h0, "fmin"))
-  critico <- stats::qchisq(1 - alfa, 1)
-  function(N) 1 - stats::pchisq(critico, 1, ncp = (N - 1) * F0)
+  reg <- paste0("f1 ~ ", paste(ifelse(seq_len(k) == cual, paste0("0*", f[-1]), f[-1]), collapse = " + "))
+  h0 <- lavaan::sem(c(med, reg), sample.cov = Sigma, sample.nobs = 1000, std.lv = TRUE)
+  2 * unname(lavaan::fitMeasures(h0, "fmin"))
+}
+
+# El N a priori con la misma búsqueda que semPower.aPriori (Nelder-Mead sobre
+# el log de beta y redondeo hacia arriba), para dar el mismo N
+.n_apriori <- function(Fmin, critico, potencia) {
+  objetivo <- log(1 - potencia)
+  dif <- function(n) if (n < 5) NA else (objetivo - stats::pchisq(critico, 1, ncp = Fmin * (n - 1), log.p = TRUE))^2
+  inicio <- 5 * 10^(-floor(log10(Fmin)) + 1)
+  if (inicio < 5) return(10L)
+  o <- stats::optim(inicio, dif, method = "Nelder-Mead", control = list(warn.1d.NelderMead = FALSE))
+  max(10L, as.integer(ceiling(o$par)))
 }

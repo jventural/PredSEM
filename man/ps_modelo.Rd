@@ -15,7 +15,9 @@ ecuaciones se separan con punto y coma: \code{"AE ~ ADA; SAT ~ ADA + AE"}
 
 \item{...}{Las variables latentes con su definición, igual que en
 \code{\link[=ps_medida]{ps_medida()}}: \code{SAT = "ASS"}, \code{ADA = "BERQ1:BERQ4 | BERQ5:BERQ8"}
-(parcelas).}
+(parcelas). Las parcelas pueden llevar nombre, que es el que aparece en
+el modelo y en \code{plot()}: \code{ADA = "DIS = BERQ1:BERQ4 | AFR = BERQ5:BERQ8"}.
+Así una variable con dimensiones se forma con sus dimensiones (parceling).}
 
 \item{covariables}{Variables observadas de la base que entran como
 controles en todas las ecuaciones (por ejemplo \code{"edad"}). Opcional.}
