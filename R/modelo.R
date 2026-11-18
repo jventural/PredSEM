@@ -90,6 +90,8 @@ ps_modelo <- function(base, modelo, ..., covariables = NULL) {
   se <- .sintaxis_estructural(partes, covariables)
   sint <- paste(.sintaxis_medida(pr$ind), se$sintaxis, sep = "\n")
   fit <- do.call(lavaan::sem, c(list(model = sint), args))
+  .comprobar_estimacion(med, "El modelo de medida conjunto")
+  .comprobar_estimacion(fit, "El modelo estructural")
 
   # --- 1. Ajuste del modelo de medida conjunto y del estructural ---
   am <- .ajuste(med); ae <- .ajuste(fit)

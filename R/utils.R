@@ -97,10 +97,12 @@ print.ps_resultado <- function(x, ...) {
       pre <- sub("[0-9]+$", "", ab[1])
       ini <- as.numeric(sub("^.*?([0-9]+)$", "\\1", ab[1])); fin <- as.numeric(sub("^.*?([0-9]+)$", "\\1", ab[2]))
       intersect(paste0(pre, ini:fin), columnas)   # numeraci\u00f3n salteada: solo los \u00edtems que existen
-    } else if (p %in% columnas) p
+    } else if (grepl("[0-9]$", p) && p %in% columnas) p   # un ítem suelto: "EPA1"
     else {
+      # un prefijo: "ARS" son ARS1, ARS2, ... aunque la base traiga también una columna
+      # "ARS" (el puntaje total); la columna exacta solo se usa si no hay ítems numerados
       v <- grep(paste0("^", p, "[0-9]+$"), columnas, value = TRUE)
-      v[order(as.numeric(sub(p, "", v, fixed = TRUE)))]
+      if (length(v)) v[order(as.numeric(sub(p, "", v, fixed = TRUE)))] else if (p %in% columnas) p else character()
     }
   }))
 }
@@ -141,8 +143,26 @@ print.ps_resultado <- function(x, ...) {
       for (k in seq_along(nom)) d[[nom[k]]] <- rowMeans(d[, df$parcelas[[k]], drop = FALSE], na.rm = TRUE)
       ind[[f]] <- nom
     }
+    if (length(ind[[f]]) < 2)
+      stop(f, " tiene un solo indicador (", ind[[f]], "): una variable latente necesita al menos dos ítems o parcelas. ",
+           "Defínela con sus ítems, por ejemplo ", f, " = \"ITEM1:ITEM6\".", call. = FALSE)
   }
+  # una columna que se llama igual que una latente (p. ej. el puntaje total "ARS") confunde a lavaan
+  sobran <- setdiff(intersect(names(defs), names(d)), unlist(ind))
+  d[sobran] <- NULL
   list(datos = d, ind = ind, ordinales = unique(ordinales))
+}
+
+# Si lavaan no converge o no puede calcular los errores estándar, los IC salen vacíos (NA):
+# mejor detenerse con un mensaje claro que fallar después con "valor ausente donde TRUE/FALSE..."
+.comprobar_estimacion <- function(fit, quien) {
+  if (!isTRUE(lavaan::lavInspect(fit, "converged")))
+    stop(quien, " no convergió. Revisa que cada variable tenga sus ítems bien definidos y los ítems inversos recodificados.", call. = FALSE)
+  pe <- lavaan::parameterEstimates(fit)
+  if (anyNA(pe$se[pe$op %in% c("=~", "~")]))
+    stop(quien, " no pudo calcular los errores estándar (el modelo no está identificado). ",
+         "Suele pasar si una variable latente tiene un solo indicador o si dos indicadores son casi idénticos.", call. = FALSE)
+  invisible(TRUE)
 }
 
 .sintaxis_medida <- function(ind) paste(sprintf("%s =~ %s", names(ind), vapply(ind, paste, "", collapse = " + ")), collapse = "\n")

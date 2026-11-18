@@ -26,6 +26,7 @@ ps_medida <- function(base, ...) {
   ord <- pr$ordinales
   fit <- lavaan::cfa(.sintaxis_medida(pr$ind), data = pr$datos, ordered = if (length(ord)) ord else NULL,
                      estimator = if (length(ord)) "WLSMV" else "MLR", std.lv = TRUE, missing = if (length(ord)) "pairwise" else "ml")
+  .comprobar_estimacion(fit, "El modelo de medida")
   a <- .ajuste(fit)
   tabla <- data.frame(Modelo = if (length(defs) == 1) "Unidimensional" else sprintf("%d factores relacionados", length(defs)),
                       Estimador = if (length(ord)) "WLSMV" else "MLR",
